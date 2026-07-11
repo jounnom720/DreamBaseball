@@ -34,9 +34,15 @@ st.set_page_config(
     layout="centered",
 )
 
-# secrets.toml에 저장해둔 이 프로젝트 전용 구글시트 ID
-# (.streamlit/secrets.toml 예시는 README.md 참고)
-SPREADSHEET_ID = st.secrets.get("dreambaseball_spreadsheet_id", "")
+# secrets.toml에 등록된 사용자(아이)별 구글시트 ID 목록을 불러옵니다.
+# 지금은 아드님 한 명만 등록되어 있지만, 나중에 다른 아이가 추가되면
+# secrets.toml의 [dreambaseball_users] 아래에 한 줄만 추가하면 됩니다.
+# (코드 수정 없이 확장 가능한 구조 - 주식 앱의 '템플릿 풀' 방식과 동일한 개념)
+USER_SHEETS = dict(st.secrets.get("dreambaseball_users", {}))
+
+# 화면 전환 함수들이 참조할 전역 변수. 사이드바에서 사용자를 선택한 뒤
+# 실제 값이 채워집니다 (아래 '사이드바 메뉴' 섹션 참고).
+SPREADSHEET_ID = ""
 
 
 # ------------------------------------------------------------
@@ -68,7 +74,7 @@ def page_mandalart():
     st.caption("사진 속 81칸 내용을 그대로 아래 표에 옮겨 적으면 됩니다.")
 
     if not SPREADSHEET_ID:
-        st.error("secrets.toml에 dreambaseball_spreadsheet_id가 설정되어 있지 않습니다.")
+        st.error("연결된 구글시트가 없습니다. secrets.toml의 [dreambaseball_users] 설정을 확인해주세요.")
         return
 
     # 1) 기존 저장된 데이터 불러오기 (없으면 빈 값)
@@ -138,6 +144,8 @@ def page_mandalart():
     )
 
     existing = load_mandalart(SPREADSHEET_ID)  # 1단계 저장 후 최신 데이터 재조회
+    st.caption(f"🔍 진단: 구글시트에서 불러온 전체 셀 개수 = {len(existing)}개 (81개여야 정상)")
+
     action_rows = []
     for r in range(1, 10):
         for c in range(1, 10):
@@ -154,6 +162,8 @@ def page_mandalart():
                 "단위": rec.get("단위", ""),
                 "목표값": rec.get("목표값", ""),
             })
+
+    st.caption(f"🔍 진단: '실천행동' 중 이름이 채워진 칸 = {len(action_rows)}개 (72개여야 정상)")
 
     if not action_rows:
         st.warning("먼저 1단계에서 목표명을 입력하고 저장해주세요.")
@@ -232,11 +242,10 @@ def page_admin_setup():
     st.title("🔧 초기 설정 (관리자)")
 
     if not SPREADSHEET_ID:
-        st.error(
-            "secrets.toml에 dreambaseball_spreadsheet_id가 설정되어 있지 않습니다."
-        )
+        st.error("연결된 구글시트가 없습니다. secrets.toml의 [dreambaseball_users] 설정을 확인해주세요.")
         return
 
+    st.write(f"현재 사용자: **{selected_user}**")
     st.write(f"연결된 스프레드시트 ID: `{SPREADSHEET_ID}`")
 
     if st.button("Google Sheets 6개 탭 생성/확인하기"):
@@ -261,6 +270,27 @@ def page_admin_setup():
 
 
 # ------------------------------------------------------------
+# 사이드바 - 사용자 선택 (지금은 1명, 나중에 여러 명으로 확장 가능)
+# ------------------------------------------------------------
+st.sidebar.title("⚾ DreamBaseball")
+
+if not USER_SHEETS:
+    st.sidebar.error("secrets.toml에 [dreambaseball_users]가 설정되어 있지 않습니다.")
+    st.stop()
+
+user_names = list(USER_SHEETS.keys())
+
+if len(user_names) == 1:
+    # 사용자가 한 명뿐이면 선택 UI 없이 자동으로 그 사용자로 진행
+    selected_user = user_names[0]
+    st.sidebar.caption(f"사용자: {selected_user}")
+else:
+    # 사용자가 여러 명이면 드롭다운으로 선택 (나중에 자동 적용됨)
+    selected_user = st.sidebar.selectbox("사용자 선택", user_names)
+
+SPREADSHEET_ID = USER_SHEETS[selected_user]
+
+# ------------------------------------------------------------
 # 사이드바 메뉴 - 화면 전환
 # ------------------------------------------------------------
 PAGES = {
@@ -273,8 +303,7 @@ PAGES = {
     "🔧 초기 설정(관리자)": page_admin_setup,
 }
 
-st.sidebar.title("⚾ DreamBaseball")
 choice = st.sidebar.radio("메뉴", list(PAGES.keys()))
-st.sidebar.caption("v0.1 · 기본 뼈대 단계")
+st.sidebar.caption("v0.2 · 만다라트 등록 단계")
 
 PAGES[choice]()
