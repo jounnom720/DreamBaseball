@@ -101,7 +101,15 @@ def page_admin_setup():
                     else:
                         st.info(f"'{name}' 탭은 이미 존재합니다")
             except Exception as e:
-                st.error(f"오류가 발생했습니다: {e}")
+                st.error(f"오류가 발생했습니다 (종류: {type(e).__name__})")
+                st.code(repr(e), language="text")
+                response = getattr(e, "response", None)
+                if response is not None:
+                    try:
+                        st.json(response.json())
+                    except Exception:
+                        st.code(str(getattr(response, "text", "")), language="text")
+                st.exception(e)
 
 
 # ------------------------------------------------------------
