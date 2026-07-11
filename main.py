@@ -144,8 +144,6 @@ def page_mandalart():
     )
 
     existing = load_mandalart(SPREADSHEET_ID)  # 1단계 저장 후 최신 데이터 재조회
-    st.caption(f"🔍 진단: 구글시트에서 불러온 전체 셀 개수 = {len(existing)}개 (81개여야 정상)")
-
     action_rows = []
     for r in range(1, 10):
         for c in range(1, 10):
@@ -162,8 +160,6 @@ def page_mandalart():
                 "단위": rec.get("단위", ""),
                 "목표값": rec.get("목표값", ""),
             })
-
-    st.caption(f"🔍 진단: '실천행동' 중 이름이 채워진 칸 = {len(action_rows)}개 (72개여야 정상)")
 
     if not action_rows:
         st.warning("먼저 1단계에서 목표명을 입력하고 저장해주세요.")
