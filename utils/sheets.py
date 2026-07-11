@@ -108,10 +108,15 @@ def load_sheet(spreadsheet_id: str, sheet_name: str):
     """
     특정 탭의 전체 데이터를 리스트[딕셔너리] 형태로 불러옵니다.
     (gspread의 get_all_records 사용 — 첫 줄을 헤더로 자동 인식)
+
+    주의: numericise_ignore=["all"]을 반드시 지정해야 합니다.
+    지정하지 않으면 gspread가 "1,1" 같은 값을 "천 단위 구분 콤마가 있는 숫자"로
+    착각해서 콤마를 제거하고 11로 변환해버리는 문제가 있습니다.
+    (이 버그 때문에 위치(행,열) 컬럼이 깨져 데이터를 못 읽어온 적이 있었습니다)
     """
     sh = get_spreadsheet(spreadsheet_id)
     ws = sh.worksheet(sheet_name)
-    return ws.get_all_records()
+    return ws.get_all_records(numericise_ignore=["all"])
 
 
 def append_row(spreadsheet_id: str, sheet_name: str, row_values: list):
