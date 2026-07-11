@@ -11,7 +11,19 @@ Streamlit 앱은 위에서 아래로 코드를 실행하는 구조입니다.
 """
 
 import streamlit as st
-from utils.sheets import initialize_sheets
+import pandas as pd
+from utils.sheets import (
+    initialize_sheets,
+    classify_cell,
+    load_mandalart,
+    save_mandalart,
+)
+
+# 목표 유형 선택지 (개발계획서의 '목표 유형' 표 반영)
+GOAL_TYPES = [
+    "", "체크형", "숫자형", "시간형", "거리형",
+    "사진형", "영상형", "기록형", "성장형",
+]
 
 # ------------------------------------------------------------
 # 기본 설정
@@ -53,7 +65,143 @@ def page_today_mission():
 
 def page_mandalart():
     st.title("🗂️ 만다라트 등록/수정")
-    st.write("(v0.2에서 81칸 목표 등록 화면이 만들어집니다)")
+    st.caption("사진 속 81칸 내용을 그대로 아래 표에 옮겨 적으면 됩니다.")
+
+    if not SPREADSHEET_ID:
+        st.error("secrets.toml에 dreambaseball_spreadsheet_id가 설정되어 있지 않습니다.")
+        return
+
+    # 1) 기존 저장된 데이터 불러오기 (없으면 빈 값)
+    try:
+        existing = load_mandalart(SPREADSHEET_ID)
+    except Exception as e:
+        st.error(f"데이터를 불러오는 중 오류가 발생했습니다 (종류: {type(e).__name__})")
+        st.exception(e)
+        return
+
+    # ----------------------------------------------------
+    # STEP 1. 9x9 격자에 목표명 입력하기
+    # ----------------------------------------------------
+    st.subheader("1단계. 81칸 목표명 입력")
+    st.info(
+        "정중앙(5행 5열)은 궁극적인 꿈, 그 둘레 8칸은 핵심목표, "
+        "나머지 8개 블록 각각의 가운데 칸은 해당 핵심목표를 반복 입력, "
+        "그 외 칸들이 매일 실천할 행동입니다."
+    )
+
+    name_grid = pd.DataFrame(
+        [
+            [existing.get((r, c), {}).get("목표명", "") for c in range(1, 10)]
+            for r in range(1, 10)
+        ],
+        index=[f"{r}행" for r in range(1, 10)],
+        columns=[f"{c}열" for c in range(1, 10)],
+    )
+
+    edited_names = st.data_editor(
+        name_grid, use_container_width=True, key="mandalart_name_editor"
+    )
+
+    if st.button("1단계 저장 (목표명만 먼저 저장)"):
+        rows = []
+        for r in range(1, 10):
+            for c in range(1, 10):
+                name = str(edited_names.loc[f"{r}행", f"{c}열"]).strip()
+                prev = existing.get((r, c), {})
+                rows.append({
+                    "목표ID": f"{r}-{c}",
+                    "위치(행,열)": f"{r},{c}",
+                    "목표명": name,
+                    "카테고리": classify_cell(r, c),
+                    "유형": prev.get("유형", ""),
+                    "단위": prev.get("단위", ""),
+                    "목표값": prev.get("목표값", ""),
+                    "활성여부": prev.get("활성여부", True),
+                })
+        try:
+            save_mandalart(SPREADSHEET_ID, rows)
+            st.success("목표명이 저장되었습니다. 아래 2단계로 진행해주세요.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"저장 중 오류가 발생했습니다 (종류: {type(e).__name__})")
+            st.exception(e)
+
+    st.divider()
+
+    # ----------------------------------------------------
+    # STEP 2. 실천행동 칸(72개)에 유형/단위/목표값 지정하기
+    # ----------------------------------------------------
+    st.subheader("2단계. 실천행동 목표 유형 지정")
+    st.caption(
+        "매일 체크할 '실천행동' 칸에만 유형을 지정합니다. "
+        "예: 티배팅 300개 → 숫자형 / 개, 달리기 30분 → 시간형 / 분"
+    )
+
+    existing = load_mandalart(SPREADSHEET_ID)  # 1단계 저장 후 최신 데이터 재조회
+    action_rows = []
+    for r in range(1, 10):
+        for c in range(1, 10):
+            if classify_cell(r, c) != "실천행동":
+                continue
+            rec = existing.get((r, c), {})
+            name = rec.get("목표명", "")
+            if not name:
+                continue  # 아직 이름이 없는 칸은 2단계 표에 표시하지 않음
+            action_rows.append({
+                "위치": f"{r},{c}",
+                "목표명": name,
+                "유형": rec.get("유형", "") or "",
+                "단위": rec.get("단위", ""),
+                "목표값": rec.get("목표값", ""),
+            })
+
+    if not action_rows:
+        st.warning("먼저 1단계에서 목표명을 입력하고 저장해주세요.")
+        return
+
+    action_df = pd.DataFrame(action_rows)
+    edited_actions = st.data_editor(
+        action_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "위치": st.column_config.TextColumn(disabled=True),
+            "목표명": st.column_config.TextColumn(disabled=True),
+            "유형": st.column_config.SelectboxColumn(options=GOAL_TYPES),
+        },
+        key="mandalart_action_editor",
+    )
+
+    if st.button("2단계 저장 (유형/단위/목표값)"):
+        edited_map = {row["위치"]: row for row in edited_actions.to_dict("records")}
+        rows = []
+        for r in range(1, 10):
+            for c in range(1, 10):
+                prev = existing.get((r, c), {})
+                pos_key = f"{r},{c}"
+                if pos_key in edited_map:
+                    upd = edited_map[pos_key]
+                    유형, 단위, 목표값 = upd["유형"], upd["단위"], upd["목표값"]
+                else:
+                    유형 = prev.get("유형", "")
+                    단위 = prev.get("단위", "")
+                    목표값 = prev.get("목표값", "")
+                rows.append({
+                    "목표ID": f"{r}-{c}",
+                    "위치(행,열)": pos_key,
+                    "목표명": prev.get("목표명", ""),
+                    "카테고리": classify_cell(r, c),
+                    "유형": 유형,
+                    "단위": 단위,
+                    "목표값": 목표값,
+                    "활성여부": prev.get("활성여부", True),
+                })
+        try:
+            save_mandalart(SPREADSHEET_ID, rows)
+            st.success("유형/단위/목표값이 저장되었습니다.")
+        except Exception as e:
+            st.error(f"저장 중 오류가 발생했습니다 (종류: {type(e).__name__})")
+            st.exception(e)
 
 
 def page_growth_chart():
