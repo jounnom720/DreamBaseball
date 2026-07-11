@@ -119,3 +119,67 @@ def append_row(spreadsheet_id: str, sheet_name: str, row_values: list):
     sh = get_spreadsheet(spreadsheet_id)
     ws = sh.worksheet(sheet_name)
     ws.append_row(row_values, value_input_option="USER_ENTERED")
+
+
+# ------------------------------------------------------------
+# 만다라트(9x9=81칸) 전용 함수
+# ------------------------------------------------------------
+# 만다라트는 3x3짜리 블록 9개로 이루어져 있고, 그 중 정중앙 블록의
+# 한가운데 칸이 "궁극목표"입니다. 정중앙 블록의 나머지 8칸은
+# "핵심목표"(8개), 그리고 나머지 8개 블록 각각의 한가운데 칸은
+# 해당 핵심목표를 반복해서 적는 칸("세부목표(반복)")이며,
+# 그 8개 블록의 나머지 칸들이 실제로 매일 실천할 "실천행동"입니다.
+def classify_cell(r: int, c: int) -> str:
+    """
+    행(r), 열(c) 모두 1~9 사이 값을 받아 만다라트 상의 역할을 반환합니다.
+    """
+    block_r, block_c = (r - 1) // 3, (c - 1) // 3
+    local_r, local_c = (r - 1) % 3, (c - 1) % 3
+    is_block_center = local_r == 1 and local_c == 1
+    is_center_block = block_r == 1 and block_c == 1
+
+    if is_center_block and is_block_center:
+        return "궁극목표"
+    if is_center_block:
+        return "핵심목표"
+    if is_block_center:
+        return "세부목표(반복)"
+    return "실천행동"
+
+
+def load_mandalart(spreadsheet_id: str) -> dict:
+    """
+    '목표_만다라트' 탭의 데이터를 불러와 {(행, 열): 레코드} 형태로 반환합니다.
+    아직 아무것도 저장되지 않았다면 빈 딕셔너리를 반환합니다.
+    """
+    records = load_sheet(spreadsheet_id, "목표_만다라트")
+    grid = {}
+    for rec in records:
+        pos = str(rec.get("위치(행,열)", ""))
+        if "," not in pos:
+            continue
+        try:
+            r_str, c_str = pos.split(",")
+            r, c = int(r_str.strip()), int(c_str.strip())
+            grid[(r, c)] = rec
+        except ValueError:
+            continue
+    return grid
+
+
+def save_mandalart(spreadsheet_id: str, rows: list[dict]):
+    """
+    rows: SHEET_SCHEMA["목표_만다라트"] 헤더와 같은 키를 가진 딕셔너리 리스트.
+    기존 데이터(헤더 제외)를 지우고 한 번에 새로 씁니다.
+    (81칸을 한 칸씩 쓰면 API 호출이 81번 발생해 rate limit에
+    걸리기 쉬우므로, 반드시 한 번의 update 호출로 묶어서 처리합니다)
+    """
+    sh = get_spreadsheet(spreadsheet_id)
+    ws = sh.worksheet("목표_만다라트")
+    headers = SHEET_SCHEMA["목표_만다라트"]
+
+    values = [[row.get(h, "") for h in headers] for row in rows]
+
+    ws.batch_clear(["A2:Z1000"])
+    if values:
+        ws.update("A2", values, value_input_option="USER_ENTERED")
