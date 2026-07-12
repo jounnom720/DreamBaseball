@@ -17,7 +17,10 @@ from utils.sheets import (
     classify_cell,
     load_mandalart,
     save_mandalart,
+    get_spreadsheet,
+    load_sheet,
 )
+from datetime import date, datetime
 
 # 목표 유형 선택지 (개발계획서의 '목표 유형' 표 반영)
 GOAL_TYPES = [
@@ -66,7 +69,116 @@ def page_home():
 
 def page_today_mission():
     st.title("📋 오늘의 미션")
-    st.write("(v0.3에서 만다라트 목표를 불러와 체크리스트로 표시합니다)")
+
+    if not SPREADSHEET_ID:
+        st.error("연결된 구글시트가 없습니다. secrets.toml의 [dreambaseball_users] 설정을 확인해주세요.")
+        return
+
+    try:
+        existing = load_mandalart(SPREADSHEET_ID)
+    except Exception as e:
+        st.error(f"데이터를 불러오는 중 오류가 발생했습니다 (종류: {type(e).__name__})")
+        st.exception(e)
+        return
+
+    def block_center(r, c):
+        br, bc = (r - 1) // 3, (c - 1) // 3
+        return br * 3 + 2, bc * 3 + 2
+
+    # 실천행동 칸만 추려서, 소속 핵심목표(블록 중앙 반복 칸의 목표명)별로 묶기
+    groups = {}
+    for (r, c), rec in existing.items():
+        if classify_cell(r, c) != "실천행동":
+            continue
+        name = str(rec.get("목표명", "")).strip()
+        if not name:
+            continue
+        active = str(rec.get("활성여부", True)).strip().lower() not in ("false", "0", "거짓", "")
+        if not active:
+            continue
+        cr, cc = block_center(r, c)
+        core_name = existing.get((cr, cc), {}).get("목표명", "기타")
+        groups.setdefault(core_name, []).append((r, c, rec))
+
+    if not groups:
+        st.warning("만다라트에 등록된 실천행동이 없습니다. 먼저 '만다라트 등록' 메뉴에서 입력해주세요.")
+        return
+
+    today = date.today()
+    st.caption(f"{today.strftime('%Y년 %m월 %d일')}")
+
+    responses = {}
+    for core_name, items in groups.items():
+        with st.expander(f"{core_name}  ({len(items)}개)", expanded=True):
+            for r, c, rec in items:
+                goal_id = f"{r}-{c}"
+                goal_type = rec.get("유형", "")
+                unit = rec.get("단위", "")
+                target = rec.get("목표값", "")
+
+                if goal_type == "체크형":
+                    checked = st.checkbox(rec["목표명"], key=f"chk_{goal_id}")
+                    responses[goal_id] = (1 if checked else 0, checked)
+
+                elif goal_type == "영상형":
+                    checked = st.checkbox(f"{rec['목표명']} (영상 촬영 완료)", key=f"chk_{goal_id}")
+                    responses[goal_id] = (1 if checked else 0, checked)
+
+                elif goal_type == "기록형":
+                    val = st.number_input(
+                        f"{rec['목표명']} ({unit})", min_value=0.0, step=1.0, key=f"num_{goal_id}",
+                    )
+                    responses[goal_id] = (val, val > 0)
+
+                else:  # 숫자형, 시간형 등 목표값이 있는 유형
+                    label = f"{rec['목표명']} (목표 {target}{unit})" if target != "" else rec["목표명"]
+                    val = st.number_input(label, min_value=0.0, step=1.0, key=f"num_{goal_id}")
+                    try:
+                        target_num = float(str(target).replace(",", "").split()[0])
+                    except (ValueError, IndexError):
+                        target_num = None
+                    done = target_num is not None and val >= target_num
+                    responses[goal_id] = (val, done)
+
+    completed = sum(1 for _, done in responses.values() if done)
+    total = len(responses)
+    st.progress(completed / total if total else 0)
+    st.write(f"완료: {completed} / {total}")
+
+    if st.button("오늘 기록 저장하기", type="primary"):
+        try:
+            save_today_log(SPREADSHEET_ID, today, responses)
+            st.success("저장되었습니다.")
+        except Exception as e:
+            st.error(f"저장 중 오류가 발생했습니다 (종류: {type(e).__name__})")
+            st.exception(e)
+
+
+def save_today_log(spreadsheet_id: str, log_date: date, responses: dict):
+    date_str = log_date.strftime("%Y-%m-%d")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    existing = load_sheet(spreadsheet_id, "일일기록")
+    keep = [r for r in existing if str(r.get("날짜", "")) != date_str]
+
+    new_rows = [{
+        "기록ID": f"{date_str}_{goal_id}",
+        "날짜": date_str,
+        "목표ID": goal_id,
+        "실행값": val,
+        "완료여부": "완료" if done else "미완료",
+        "등록시각": now_str,
+    } for goal_id, (val, done) in responses.items()]
+
+    headers = ["기록ID", "날짜", "목표ID", "실행값", "완료여부", "등록시각"]
+    all_rows = keep + new_rows
+    values = [[row.get(h, "") for h in headers] for row in all_rows]
+
+    sh = get_spreadsheet(spreadsheet_id)
+    ws = sh.worksheet("일일기록")
+    ws.batch_clear(["A2:F100000"])
+    if values:
+        ws.update("A2", values, value_input_option="USER_ENTERED")
 
 
 def page_mandalart():
