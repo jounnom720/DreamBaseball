@@ -29,7 +29,7 @@ SCOPES = [
 SHEET_SCHEMA = {
     "목표_만다라트": [
         "목표ID", "위치(행,열)", "목표명", "카테고리",
-        "유형", "단위", "목표값", "활성여부", "이미지링크"   # 이미지링크 추가
+        "유형", "단위", "목표값", "활성여부", "이미지링크"
     ],
     "일일기록": [
         "기록ID", "날짜", "목표ID", "실행값", "완료여부", "등록시각"
@@ -109,13 +109,22 @@ def load_sheet(spreadsheet_id: str, sheet_name: str):
     특정 탭의 전체 데이터를 리스트[딕셔너리] 형태로 불러옵니다.
     (gspread의 get_all_records 사용 — 첫 줄을 헤더로 자동 인식)
 
-    주의: numericise_ignore=["all"]을 반드시 지정해야 합니다.
+    주의 1: numericise_ignore=["all"]을 반드시 지정해야 합니다.
     지정하지 않으면 gspread가 "1,1" 같은 값을 "천 단위 구분 콤마가 있는 숫자"로
     착각해서 콤마를 제거하고 11로 변환해버리는 문제가 있습니다.
     (이 버그 때문에 위치(행,열) 컬럼이 깨져 데이터를 못 읽어온 적이 있었습니다)
+
+    주의 2: expected_headers를 SHEET_SCHEMA 기준으로 명시적으로 넘깁니다.
+    구글 시트를 사람이 직접 편집하다 보면 J열, K열처럼 예상치 못한 곳에
+    빈 칸이나 이전 테스트 흔적이 남을 수 있는데, 이 경우 gspread가
+    "헤더에 이름 없는 열이 여러 개 있다(중복 '')"며 오류를 냅니다.
+    expected_headers를 지정하면 딱 정해진 열까지만 읽어서 이 문제를 피합니다.
     """
     sh = get_spreadsheet(spreadsheet_id)
     ws = sh.worksheet(sheet_name)
+    expected = SHEET_SCHEMA.get(sheet_name)
+    if expected:
+        return ws.get_all_records(numericise_ignore=["all"], expected_headers=expected)
     return ws.get_all_records(numericise_ignore=["all"])
 
 
