@@ -1,153 +1,305 @@
-# -*- coding: utf-8 -*-
 """
-DreamBaseball v0.3 - 오늘의 미션 체크리스트 화면
+DreamBaseball - 초등학교 6학년 야구선수 꿈나무를 위한 성장 기록 앱
+=================================================================
+버전: v0.1 (기본 뼈대 + Google Sheets 6개 탭 초기화)
 
-전제(반드시 기존 앱 구조에 맞게 확인/수정 필요):
-- 인증된 gspread 클라이언트를 반환하는 get_gspread_client() 함수가
-  기존 stock_app_main.py 또는 공통 auth 모듈에 이미 존재한다고 가정.
-  (없다면 기존 Stock_app에서 쓰던 서비스 계정 인증 코드를 그대로 재사용하세요.)
-- 'mandalart' 시트에 아래 8개 열이 그대로 존재:
-  핵심영역_번호 | 핵심영역명 | 실천행동_번호 | 실천행동명 | 유형 | 단위 | 목표값 | 주기
-  -> 구글 시트에서 직접 수정하신 내용이 이 열 이름과 다르면 COLUMNS 부분만 맞춰 바꾸면 됩니다.
-- 다중 사용자 구조이므로 spreadsheet_id를 모든 캐시 함수의 명시적 인자로 넘김
-  (Stock_app과 동일한 패턴).
+[구조 설명 - 비개발자를 위한 안내]
+Streamlit 앱은 위에서 아래로 코드를 실행하는 구조입니다.
+이 파일(main.py)이 "진입점"이고, 사이드바에서 메뉴를 선택하면
+각 화면에 해당하는 함수를 호출하는 방식(if/elif)으로 페이지를 전환합니다.
+(추후 화면이 많아지면 st.Page / st.navigation 방식으로 리팩터링 가능)
 """
 
 import streamlit as st
 import pandas as pd
-from datetime import date
-import gspread
+from utils.sheets import (
+    initialize_sheets,
+    classify_cell,
+    load_mandalart,
+    save_mandalart,
+)
+
+# 목표 유형 선택지 (개발계획서의 '목표 유형' 표 반영)
+GOAL_TYPES = [
+    "", "체크형", "숫자형", "시간형", "거리형",
+    "사진형", "영상형", "기록형", "성장형",
+]
+
+# ------------------------------------------------------------
+# 기본 설정
+# ------------------------------------------------------------
+st.set_page_config(
+    page_title="DreamBaseball ⚾",
+    page_icon="⚾",
+    layout="centered",
+)
+
+# secrets.toml에 등록된 사용자(아이)별 구글시트 ID 목록을 불러옵니다.
+# 지금은 아드님 한 명만 등록되어 있지만, 나중에 다른 아이가 추가되면
+# secrets.toml의 [dreambaseball_users] 아래에 한 줄만 추가하면 됩니다.
+# (코드 수정 없이 확장 가능한 구조 - 주식 앱의 '템플릿 풀' 방식과 동일한 개념)
+USER_SHEETS = dict(st.secrets.get("dreambaseball_users", {}))
+
+# 화면 전환 함수들이 참조할 전역 변수. 사이드바에서 사용자를 선택한 뒤
+# 실제 값이 채워집니다 (아래 '사이드바 메뉴' 섹션 참고).
+SPREADSHEET_ID = ""
 
 
-# ---------------------------------------------------------------------------
-# 주기 -> 요일 매핑
-# 월=0 ... 일=6. 같은 '주3회'라도 실천행동마다 다른 요일이 필요하면
-# WEEKDAY_SCHEDULE을 실천행동 단위로 세분화하면 됩니다 (현재는 유형 단위 배분).
-# ---------------------------------------------------------------------------
-WEEKDAY_SCHEDULE = {
-    "매일": {0, 1, 2, 3, 4, 5, 6},
-    "주1회": {0},            # 월요일
-    "주2회": {1, 3},          # 화, 목
-    "주3회": {0, 2, 4},       # 월, 수, 금
-    "주4회": {0, 1, 3, 4},    # 월, 화, 목, 금
-}
-# 날짜가 아니라 상황에 따라 발생하는 항목 (매일 화면 상단이 아닌 별도 섹션에 노출)
-EVENT_BASED = {"필요 시", "경기일", "경기 전", "경기 후", "경기 시", "훈련 시"}
+# ------------------------------------------------------------
+# 화면(페이지)별 함수 - v0.1에서는 자리만 잡아두는 뼈대 상태
+# 다음 버전(v0.2~)에서 각 함수 내부를 실제 기능으로 채워나갑니다.
+# ------------------------------------------------------------
 
-LOG_COLUMNS = ["날짜", "핵심영역_번호", "핵심영역명", "실천행동_번호",
-               "실천행동명", "유형", "입력값", "완료여부"]
+def page_home():
+    st.title("⚾ DreamBaseball")
+    st.caption("노력은 재능을 이긴다")
+    st.markdown("### 오늘도 한 걸음!")
 
+    col1, col2, col3 = st.columns(3)
+    col1.metric("오늘 달성률", "- %")
+    col2.metric("레벨", "LV -")
+    col3.metric("연속 성공", "- 일")
 
-def is_scheduled_today(period: str, today: date) -> bool:
-    """주기 문자열을 보고 오늘 노출해야 하는 정기 미션인지 판단."""
-    if period in WEEKDAY_SCHEDULE:
-        return today.weekday() in WEEKDAY_SCHEDULE[period]
-    if period == "월1회":
-        return today.day == 1
-    return False  # 상황별 항목은 별도 처리
+    st.info("v0.2에서 실제 데이터가 연결될 예정입니다.")
+    st.button("오늘 시작하기 ▶", use_container_width=True, type="primary")
 
 
-def _parse_target(target) -> float | None:
-    """목표값 열에 '측정·기록', '60 이하' 같은 문자열이 섞여 있어도
-    앞쪽 숫자만 뽑아 진행률 판정에 사용."""
-    try:
-        first_token = str(target).replace(",", "").split()[0]
-        return float(first_token)
-    except (ValueError, IndexError):
-        return None
+def page_today_mission():
+    st.title("📋 오늘의 미션")
+    st.write("(v0.3에서 만다라트 목표를 불러와 체크리스트로 표시합니다)")
 
 
-@st.cache_data(ttl=30)
-def load_mandalart(spreadsheet_id: str) -> pd.DataFrame:
-    gc = get_gspread_client()
-    sh = gc.open_by_key(spreadsheet_id)
-    ws = sh.worksheet("mandalart")
-    # 프로젝트 공통 규칙: 콤마 포함 문자열이 숫자로 잘못 변환되는 것 방지
-    records = ws.get_all_records(numericise_ignore=["all"])
-    return pd.DataFrame(records)
+def page_mandalart():
+    st.title("🗂️ 만다라트 등록/수정")
+    st.caption("사진 속 81칸 내용을 그대로 아래 표에 옮겨 적으면 됩니다.")
 
-
-def render_daily_checklist(spreadsheet_id: str):
-    st.subheader("오늘의 미션 체크리스트")
-
-    today = date.today()
-    df = load_mandalart(spreadsheet_id)
-    if df.empty:
-        st.info("mandalart 시트에서 등록된 실천행동을 찾을 수 없습니다. 시트 내용을 확인해주세요.")
+    if not SPREADSHEET_ID:
+        st.error("연결된 구글시트가 없습니다. secrets.toml의 [dreambaseball_users] 설정을 확인해주세요.")
         return
 
-    scheduled = df[df["주기"].apply(lambda p: is_scheduled_today(p, today))]
-    event_based = df[df["주기"].isin(EVENT_BASED)]
-
-    st.caption(f"{today.strftime('%Y년 %m월 %d일')} · 오늘의 정기 미션 {len(scheduled)}개")
-
-    responses = {}
-
-    # 핵심영역별로 묶어서 표시
-    for core_no, group in scheduled.groupby("핵심영역_번호"):
-        core_name = group["핵심영역명"].iloc[0]
-        with st.expander(f"{core_no}. {core_name}  ({len(group)}개)", expanded=True):
-            for _, row in group.iterrows():
-                key = f"{core_no}_{row['실천행동_번호']}"
-                if row["유형"] == "체크형":
-                    checked = st.checkbox(row["실천행동명"], key=f"chk_{key}")
-                    responses[key] = {"row": row, "value": 1 if checked else 0, "done": checked}
-                else:
-                    val = st.number_input(
-                        f"{row['실천행동명']} (목표 {row['목표값']}{row['단위']})",
-                        min_value=0.0, step=1.0, key=f"num_{key}",
-                    )
-                    target = _parse_target(row["목표값"])
-                    done = target is not None and val >= target
-                    responses[key] = {"row": row, "value": val, "done": done}
-
-    # 상황별(경기 전후, 필요 시 등) 미션은 별도 섹션 - 전체 완료율 계산에서는 제외
-    if not event_based.empty:
-        with st.expander("상황별 미션 (경기 전후 · 필요 시)", expanded=False):
-            for _, row in event_based.iterrows():
-                key = f"event_{row['핵심영역_번호']}_{row['실천행동_번호']}"
-                checked = st.checkbox(f"{row['실천행동명']} ({row['주기']})", key=f"chk_{key}")
-                responses[key] = {"row": row, "value": 1 if checked else 0,
-                                   "done": checked, "event": True}
-
-    # 진행률은 정기 미션 기준으로만 계산
-    regular_results = [r for r in responses.values() if not r.get("event")]
-    completed = sum(1 for r in regular_results if r["done"])
-    total = len(regular_results)
-    st.progress(completed / total if total else 0)
-    st.write(f"완료: {completed} / {total}")
-
-    if st.button("오늘 기록 저장하기", type="primary"):
-        save_daily_log(spreadsheet_id, today, responses)
-        st.cache_data.clear()
-        st.success("저장되었습니다.")
-
-
-def save_daily_log(spreadsheet_id: str, log_date: date, responses: dict):
-    gc = get_gspread_client()
-    sh = gc.open_by_key(spreadsheet_id)
+    # 1) 기존 저장된 데이터 불러오기 (없으면 빈 값)
     try:
-        ws = sh.worksheet("daily_log")
-    except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title="daily_log", rows=1000, cols=len(LOG_COLUMNS))
-        ws.update([LOG_COLUMNS], value_input_option="USER_ENTERED")
+        existing = load_mandalart(SPREADSHEET_ID)
+    except Exception as e:
+        st.error(f"데이터를 불러오는 중 오류가 발생했습니다 (종류: {type(e).__name__})")
+        st.exception(e)
+        return
 
-    date_str = log_date.strftime("%Y-%m-%d")
-    existing = ws.get_all_records(numericise_ignore=["all"])
-    # 같은 날짜 기존 기록은 지우고 새로 씀 (하루 여러 번 저장해도 중복 안 쌓이게)
-    keep_rows = [r for r in existing if r.get("날짜") != date_str]
+    # ----------------------------------------------------
+    # STEP 1. 9x9 격자에 목표명 입력하기
+    # ----------------------------------------------------
+    st.subheader("1단계. 81칸 목표명 입력")
+    st.info(
+        "정중앙(5행 5열)은 궁극적인 꿈, 그 둘레 8칸은 핵심목표, "
+        "나머지 8개 블록 각각의 가운데 칸은 해당 핵심목표를 반복 입력, "
+        "그 외 칸들이 매일 실천할 행동입니다."
+    )
 
-    new_rows = []
-    for r in responses.values():
-        row = r["row"]
-        new_rows.append([
-            date_str, row["핵심영역_번호"], row["핵심영역명"],
-            row["실천행동_번호"], row["실천행동명"], row["유형"],
-            r["value"], "완료" if r["done"] else "미완료",
-        ])
+    name_grid = pd.DataFrame(
+        [
+            [existing.get((r, c), {}).get("목표명", "") for c in range(1, 10)]
+            for r in range(1, 10)
+        ],
+        index=[f"{r}행" for r in range(1, 10)],
+        columns=[f"{c}열" for c in range(1, 10)],
+    )
 
-    all_rows = [[k.get(c, "") for c in LOG_COLUMNS] for k in keep_rows] + new_rows
+    edited_names = st.data_editor(
+        name_grid, use_container_width=True, key="mandalart_name_editor"
+    )
 
-    ws.batch_clear([f"A2:H{len(existing) + len(new_rows) + 10}"])
-    if all_rows:
-        ws.update("A2", all_rows, value_input_option="USER_ENTERED")
+    if st.button("1단계 저장 (목표명만 먼저 저장)"):
+        rows = []
+        for r in range(1, 10):
+            for c in range(1, 10):
+                name = str(edited_names.loc[f"{r}행", f"{c}열"]).strip()
+                prev = existing.get((r, c), {})
+                rows.append({
+                    "목표ID": f"{r}-{c}",
+                    "위치(행,열)": f"{r},{c}",
+                    "목표명": name,
+                    "카테고리": classify_cell(r, c),
+                    "유형": prev.get("유형", ""),
+                    "단위": prev.get("단위", ""),
+                    "목표값": prev.get("목표값", ""),
+                    "활성여부": prev.get("활성여부", True),
+                })
+        try:
+            save_mandalart(SPREADSHEET_ID, rows)
+            st.success("목표명이 저장되었습니다. 아래 2단계로 진행해주세요.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"저장 중 오류가 발생했습니다 (종류: {type(e).__name__})")
+            st.exception(e)
+
+    st.divider()
+
+    # ----------------------------------------------------
+    # STEP 2. 실천행동 칸(72개)에 유형/단위/목표값 지정하기
+    # ----------------------------------------------------
+    st.subheader("2단계. 실천행동 목표 유형 지정")
+    st.caption(
+        "매일 체크할 '실천행동' 칸에만 유형을 지정합니다. "
+        "예: 티배팅 300개 → 숫자형 / 개, 달리기 30분 → 시간형 / 분"
+    )
+
+    existing = load_mandalart(SPREADSHEET_ID)  # 1단계 저장 후 최신 데이터 재조회
+    action_rows = []
+    for r in range(1, 10):
+        for c in range(1, 10):
+            if classify_cell(r, c) != "실천행동":
+                continue
+            rec = existing.get((r, c), {})
+            name = rec.get("목표명", "")
+            if not name:
+                continue  # 아직 이름이 없는 칸은 2단계 표에 표시하지 않음
+            action_rows.append({
+                "위치": f"{r},{c}",
+                "목표명": name,
+                "유형": rec.get("유형", "") or "",
+                "단위": rec.get("단위", ""),
+                "목표값": rec.get("목표값", ""),
+            })
+
+    if not action_rows:
+        st.warning("먼저 1단계에서 목표명을 입력하고 저장해주세요.")
+        return
+
+    action_df = pd.DataFrame(action_rows)
+    edited_actions = st.data_editor(
+        action_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "위치": st.column_config.TextColumn(disabled=True),
+            "목표명": st.column_config.TextColumn(disabled=True),
+            "유형": st.column_config.SelectboxColumn(options=GOAL_TYPES),
+        },
+        key="mandalart_action_editor",
+    )
+
+    if st.button("2단계 저장 (유형/단위/목표값)"):
+        edited_map = {row["위치"]: row for row in edited_actions.to_dict("records")}
+        rows = []
+        for r in range(1, 10):
+            for c in range(1, 10):
+                prev = existing.get((r, c), {})
+                pos_key = f"{r},{c}"
+                if pos_key in edited_map:
+                    upd = edited_map[pos_key]
+                    유형, 단위, 목표값 = upd["유형"], upd["단위"], upd["목표값"]
+                else:
+                    유형 = prev.get("유형", "")
+                    단위 = prev.get("단위", "")
+                    목표값 = prev.get("목표값", "")
+                rows.append({
+                    "목표ID": f"{r}-{c}",
+                    "위치(행,열)": pos_key,
+                    "목표명": prev.get("목표명", ""),
+                    "카테고리": classify_cell(r, c),
+                    "유형": 유형,
+                    "단위": 단위,
+                    "목표값": 목표값,
+                    "활성여부": prev.get("활성여부", True),
+                })
+        try:
+            save_mandalart(SPREADSHEET_ID, rows)
+            st.success("유형/단위/목표값이 저장되었습니다.")
+        except Exception as e:
+            st.error(f"저장 중 오류가 발생했습니다 (종류: {type(e).__name__})")
+            st.exception(e)
+
+
+def page_growth_chart():
+    st.title("📈 성장 그래프")
+    st.write("(v0.6에서 Plotly 그래프가 연결됩니다)")
+
+
+def page_level_badge():
+    st.title("🏅 레벨 & 배지")
+    st.write("(v0.4~v0.5에서 경험치·배지 시스템이 추가됩니다)")
+
+
+def page_parent_mode():
+    st.title("👨‍👩‍👦 부모 모드")
+    pw = st.text_input("비밀번호", type="password")
+    if pw:
+        if pw == st.secrets.get("parent_password", ""):
+            st.success("인증되었습니다. (v0.7에서 메모/통계 기능이 추가됩니다)")
+        else:
+            st.error("비밀번호가 올바르지 않습니다.")
+
+
+def page_admin_setup():
+    """
+    관리자 전용: Google Sheets 6개 탭을 처음 한 번 생성하는 화면.
+    실제 서비스 오픈 후에는 사이드바 메뉴에서 숨겨도 됩니다.
+    """
+    st.title("🔧 초기 설정 (관리자)")
+
+    if not SPREADSHEET_ID:
+        st.error("연결된 구글시트가 없습니다. secrets.toml의 [dreambaseball_users] 설정을 확인해주세요.")
+        return
+
+    st.write(f"현재 사용자: **{selected_user}**")
+    st.write(f"연결된 스프레드시트 ID: `{SPREADSHEET_ID}`")
+
+    if st.button("Google Sheets 6개 탭 생성/확인하기"):
+        with st.spinner("시트를 확인하고 있습니다..."):
+            try:
+                result = initialize_sheets(SPREADSHEET_ID)
+                for name, status in result.items():
+                    if status == "생성됨":
+                        st.success(f"'{name}' 탭 생성 완료")
+                    else:
+                        st.info(f"'{name}' 탭은 이미 존재합니다")
+            except Exception as e:
+                st.error(f"오류가 발생했습니다 (종류: {type(e).__name__})")
+                st.code(repr(e), language="text")
+                response = getattr(e, "response", None)
+                if response is not None:
+                    try:
+                        st.json(response.json())
+                    except Exception:
+                        st.code(str(getattr(response, "text", "")), language="text")
+                st.exception(e)
+
+
+# ------------------------------------------------------------
+# 사이드바 - 사용자 선택 (지금은 1명, 나중에 여러 명으로 확장 가능)
+# ------------------------------------------------------------
+st.sidebar.title("⚾ DreamBaseball")
+
+if not USER_SHEETS:
+    st.sidebar.error("secrets.toml에 [dreambaseball_users]가 설정되어 있지 않습니다.")
+    st.stop()
+
+user_names = list(USER_SHEETS.keys())
+
+if len(user_names) == 1:
+    # 사용자가 한 명뿐이면 선택 UI 없이 자동으로 그 사용자로 진행
+    selected_user = user_names[0]
+    st.sidebar.caption(f"사용자: {selected_user}")
+else:
+    # 사용자가 여러 명이면 드롭다운으로 선택 (나중에 자동 적용됨)
+    selected_user = st.sidebar.selectbox("사용자 선택", user_names)
+
+SPREADSHEET_ID = USER_SHEETS[selected_user]
+
+# ------------------------------------------------------------
+# 사이드바 메뉴 - 화면 전환
+# ------------------------------------------------------------
+PAGES = {
+    "🏠 메인 화면": page_home,
+    "📋 오늘의 미션": page_today_mission,
+    "🗂️ 만다라트 등록": page_mandalart,
+    "📈 성장 그래프": page_growth_chart,
+    "🏅 레벨/배지": page_level_badge,
+    "👨‍👩‍👦 부모 모드": page_parent_mode,
+    "🔧 초기 설정(관리자)": page_admin_setup,
+}
+
+choice = st.sidebar.radio("메뉴", list(PAGES.keys()))
+st.sidebar.caption("v0.2 · 만다라트 등록 단계")
+
+PAGES[choice]()
