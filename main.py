@@ -87,7 +87,7 @@ def page_home():
     st.markdown(
         f"""
         <style>
-        [data-testid="stAppViewContainer"] > .main {{
+        .stApp {{
             background-image: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)), url("{MAIN_BG_URL}");
             background-size: cover;
             background-position: center;
