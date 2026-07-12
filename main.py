@@ -142,9 +142,6 @@ def page_today_mission():
                 emoji = ACTION_EMOJI.get(rec["목표명"], "")
                 img_link = str(rec.get("이미지링크", "") or "").strip()
 
-                if goal_id == "1-1":
-                    st.caption(f"🔧 디버그: 이미지링크 원본값 = {repr(rec.get('이미지링크'))}")
-
                 if goal_type == "체크형":
                     checked = st.checkbox(f"{emoji} {rec['목표명']}", key=f"chk_{goal_id}")
                     responses[goal_id] = (1 if checked else 0, checked)
@@ -169,8 +166,11 @@ def page_today_mission():
                     done = target_num is not None and val >= target_num
                     responses[goal_id] = (val, done)
 
-                if img_link:
-                    st.image(img_link, width=120)
+                if img_link.startswith("http://") or img_link.startswith("https://"):
+                    try:
+                        st.image(img_link, width=120)
+                    except Exception:
+                        st.caption("⚠️ 이미지를 불러올 수 없습니다. 이미지링크 값을 확인해주세요.")
 
     completed = sum(1 for _, done in responses.values() if done)
     total = len(responses)
