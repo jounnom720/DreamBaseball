@@ -64,8 +64,10 @@ ACTION_EMOJI = {
 }
 
 # 화면 고정 이미지 (메인 화면 배경, 사이드바 하단)
-MAIN_BG_URL = "https://drive.google.com/uc?export=view&id=1sS5EaZBviifKimP14-C0pEe86Epsy9S1"
-SIDEBAR_IMG_URL = "https://drive.google.com/uc?export=view&id=1ls5ofG-CaVfjpbFSmn8doYo2rklHnhG_"
+# 참고: 구글 드라이브의 uc?export=view 형식은 <img> 삽입용으로는 자주 깨져서,
+# 더 안정적인 thumbnail 형식을 사용합니다.
+MAIN_BG_URL = "https://drive.google.com/thumbnail?id=1sS5EaZBviifKimP14-C0pEe86Epsy9S1&sz=w1600"
+SIDEBAR_IMG_URL = "https://drive.google.com/thumbnail?id=1ls5ofG-CaVfjpbFSmn8doYo2rklHnhG_&sz=w600"
 
 # ------------------------------------------------------------
 # 기본 설정
