@@ -27,12 +27,15 @@ GOAL_TYPES = [
     "", "체크형", "숫자형", "시간형", "거리형",
     "사진형", "영상형", "기록형", "성장형",
 ]
+
+# 8대 핵심목표 이모지 (오늘의 미션 화면에서 그룹 제목 앞에 표시)
 CORE_EMOJI = {
     "타격력 강화": "⚾", "투구·수비 능력": "🧤", "스피드·주루 능력": "🏃",
     "체력·몸 관리": "💪", "멘탈 관리": "🧠", "생활 습관·인성": "🌱",
     "야구 지식·전략": "📖", "팀워크·인간관계": "🤝",
 }
 
+# 실천행동 64개 이모지 (목표명과 정확히 일치해야 매칭됨)
 ACTION_EMOJI = {
     "매일 티배팅 실시": "🏏", "스윙 폼 영상 촬영 후 분석": "🎥", "스윙 스피드 측정 훈련": "⏱️",
     "변화구 대응 타격 연습": "🌀", "선구안 훈련": "👀", "상체 근력 강화 웨이트": "🏋️",
@@ -59,6 +62,7 @@ ACTION_EMOJI = {
     "갈등 대화로 해결 연습": "🕊️", "코치와 신뢰관계 쌓기": "🤝", "팀 승리 위한 개인 역할 이해": "🏆",
     "상대팀 스포츠맨십 실천": "🫱", "가족과 훈련 상황 공유·소통": "👨‍👩‍👧",
 }
+
 # ------------------------------------------------------------
 # 기본 설정
 # ------------------------------------------------------------
@@ -68,21 +72,10 @@ st.set_page_config(
     layout="centered",
 )
 
-# secrets.toml에 등록된 사용자(아이)별 구글시트 ID 목록을 불러옵니다.
-# 지금은 아드님 한 명만 등록되어 있지만, 나중에 다른 아이가 추가되면
-# secrets.toml의 [dreambaseball_users] 아래에 한 줄만 추가하면 됩니다.
-# (코드 수정 없이 확장 가능한 구조 - 주식 앱의 '템플릿 풀' 방식과 동일한 개념)
 USER_SHEETS = dict(st.secrets.get("dreambaseball_users", {}))
 
-# 화면 전환 함수들이 참조할 전역 변수. 사이드바에서 사용자를 선택한 뒤
-# 실제 값이 채워집니다 (아래 '사이드바 메뉴' 섹션 참고).
 SPREADSHEET_ID = ""
 
-
-# ------------------------------------------------------------
-# 화면(페이지)별 함수 - v0.1에서는 자리만 잡아두는 뼈대 상태
-# 다음 버전(v0.2~)에서 각 함수 내부를 실제 기능으로 채워나갑니다.
-# ------------------------------------------------------------
 
 def page_home():
     st.title("⚾ DreamBaseball")
@@ -116,7 +109,6 @@ def page_today_mission():
         br, bc = (r - 1) // 3, (c - 1) // 3
         return br * 3 + 2, bc * 3 + 2
 
-    # 실천행동 칸만 추려서, 소속 핵심목표(블록 중앙 반복 칸의 목표명)별로 묶기
     groups = {}
     for (r, c), rec in existing.items():
         if classify_cell(r, c) != "실천행동":
@@ -140,29 +132,32 @@ def page_today_mission():
 
     responses = {}
     for core_name, items in groups.items():
-        with st.expander(f"{core_name}  ({len(items)}개)", expanded=True):
+        core_emoji = CORE_EMOJI.get(core_name, "")
+        with st.expander(f"{core_emoji} {core_name}  ({len(items)}개)", expanded=True):
             for r, c, rec in items:
                 goal_id = f"{r}-{c}"
                 goal_type = rec.get("유형", "")
                 unit = rec.get("단위", "")
                 target = rec.get("목표값", "")
+                emoji = ACTION_EMOJI.get(rec["목표명"], "")
+                img_link = str(rec.get("이미지링크", "") or "").strip()
 
                 if goal_type == "체크형":
-                    checked = st.checkbox(rec["목표명"], key=f"chk_{goal_id}")
+                    checked = st.checkbox(f"{emoji} {rec['목표명']}", key=f"chk_{goal_id}")
                     responses[goal_id] = (1 if checked else 0, checked)
 
                 elif goal_type == "영상형":
-                    checked = st.checkbox(f"{rec['목표명']} (영상 촬영 완료)", key=f"chk_{goal_id}")
+                    checked = st.checkbox(f"{emoji} {rec['목표명']} (영상 촬영 완료)", key=f"chk_{goal_id}")
                     responses[goal_id] = (1 if checked else 0, checked)
 
                 elif goal_type == "기록형":
                     val = st.number_input(
-                        f"{rec['목표명']} ({unit})", min_value=0.0, step=1.0, key=f"num_{goal_id}",
+                        f"{emoji} {rec['목표명']} ({unit})", min_value=0.0, step=1.0, key=f"num_{goal_id}",
                     )
                     responses[goal_id] = (val, val > 0)
 
                 else:  # 숫자형, 시간형 등 목표값이 있는 유형
-                    label = f"{rec['목표명']} (목표 {target}{unit})" if target != "" else rec["목표명"]
+                    label = f"{emoji} {rec['목표명']} (목표 {target}{unit})" if target != "" else f"{emoji} {rec['목표명']}"
                     val = st.number_input(label, min_value=0.0, step=1.0, key=f"num_{goal_id}")
                     try:
                         target_num = float(str(target).replace(",", "").split()[0])
@@ -170,6 +165,9 @@ def page_today_mission():
                         target_num = None
                     done = target_num is not None and val >= target_num
                     responses[goal_id] = (val, done)
+
+                if img_link:
+                    st.image(img_link, width=120)
 
     completed = sum(1 for _, done in responses.values() if done)
     total = len(responses)
@@ -220,7 +218,6 @@ def page_mandalart():
         st.error("연결된 구글시트가 없습니다. secrets.toml의 [dreambaseball_users] 설정을 확인해주세요.")
         return
 
-    # 1) 기존 저장된 데이터 불러오기 (없으면 빈 값)
     try:
         existing = load_mandalart(SPREADSHEET_ID)
     except Exception as e:
@@ -228,9 +225,6 @@ def page_mandalart():
         st.exception(e)
         return
 
-    # ----------------------------------------------------
-    # STEP 1. 9x9 격자에 목표명 입력하기
-    # ----------------------------------------------------
     st.subheader("1단계. 81칸 목표명 입력")
     st.info(
         "정중앙(5행 5열)은 궁극적인 꿈, 그 둘레 8칸은 핵심목표, "
@@ -266,6 +260,7 @@ def page_mandalart():
                     "단위": prev.get("단위", ""),
                     "목표값": prev.get("목표값", ""),
                     "활성여부": prev.get("활성여부", True),
+                    "이미지링크": prev.get("이미지링크", ""),
                 })
         try:
             save_mandalart(SPREADSHEET_ID, rows)
@@ -277,9 +272,6 @@ def page_mandalart():
 
     st.divider()
 
-    # ----------------------------------------------------
-    # STEP 2. 실천행동 칸(72개)에 유형/단위/목표값 지정하기
-    # ----------------------------------------------------
     st.subheader("2단계. 실천행동 목표 유형 지정")
     st.caption(
         "매일 체크할 '실천행동' 칸에만 유형을 지정합니다. "
@@ -295,7 +287,7 @@ def page_mandalart():
             rec = existing.get((r, c), {})
             name = rec.get("목표명", "")
             if not name:
-                continue  # 아직 이름이 없는 칸은 2단계 표에 표시하지 않음
+                continue
             action_rows.append({
                 "위치": f"{r},{c}",
                 "목표명": name,
@@ -344,6 +336,7 @@ def page_mandalart():
                     "단위": 단위,
                     "목표값": 목표값,
                     "활성여부": prev.get("활성여부", True),
+                    "이미지링크": prev.get("이미지링크", ""),
                 })
         try:
             save_mandalart(SPREADSHEET_ID, rows)
@@ -408,9 +401,6 @@ def page_admin_setup():
                 st.exception(e)
 
 
-# ------------------------------------------------------------
-# 사이드바 - 사용자 선택 (지금은 1명, 나중에 여러 명으로 확장 가능)
-# ------------------------------------------------------------
 st.sidebar.title("⚾ DreamBaseball")
 
 if not USER_SHEETS:
@@ -420,18 +410,13 @@ if not USER_SHEETS:
 user_names = list(USER_SHEETS.keys())
 
 if len(user_names) == 1:
-    # 사용자가 한 명뿐이면 선택 UI 없이 자동으로 그 사용자로 진행
     selected_user = user_names[0]
     st.sidebar.caption(f"사용자: {selected_user}")
 else:
-    # 사용자가 여러 명이면 드롭다운으로 선택 (나중에 자동 적용됨)
     selected_user = st.sidebar.selectbox("사용자 선택", user_names)
 
 SPREADSHEET_ID = USER_SHEETS[selected_user]
 
-# ------------------------------------------------------------
-# 사이드바 메뉴 - 화면 전환
-# ------------------------------------------------------------
 PAGES = {
     "🏠 메인 화면": page_home,
     "📋 오늘의 미션": page_today_mission,
