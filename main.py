@@ -63,6 +63,10 @@ ACTION_EMOJI = {
     "상대팀 스포츠맨십 실천": "🫱", "가족과 훈련 상황 공유·소통": "👨‍👩‍👧",
 }
 
+# 화면 고정 이미지 (메인 화면 배경, 사이드바 하단)
+MAIN_BG_URL = "https://drive.google.com/uc?export=view&id=1sS5EaZBviifKimP14-C0pEe86Epsy9S1"
+SIDEBAR_IMG_URL = "https://drive.google.com/uc?export=view&id=1ls5ofG-CaVfjpbFSmn8doYo2rklHnhG_"
+
 # ------------------------------------------------------------
 # 기본 설정
 # ------------------------------------------------------------
@@ -78,6 +82,20 @@ SPREADSHEET_ID = ""
 
 
 def page_home():
+    st.markdown(
+        f"""
+        <style>
+        [data-testid="stAppViewContainer"] > .main {{
+            background-image: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)), url("{MAIN_BG_URL}");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.title("⚾ DreamBaseball")
     st.caption("노력은 재능을 이긴다")
     st.markdown("### 오늘도 한 걸음!")
@@ -432,5 +450,6 @@ PAGES = {
 
 choice = st.sidebar.radio("메뉴", list(PAGES.keys()))
 st.sidebar.caption("v0.2 · 만다라트 등록 단계")
+st.sidebar.image(SIDEBAR_IMG_URL, use_container_width=True)
 
 PAGES[choice]()
