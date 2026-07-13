@@ -191,6 +191,9 @@ def page_today_mission():
                         st.image(img_link, width=120)
                     except Exception:
                         st.caption("⚠️ 이미지를 불러올 수 없습니다. 이미지링크 값을 확인해주세요.")
+                else:
+                    placeholder_emoji = emoji if emoji else "⚾"
+                    st.markdown(f'<div style="width:120px;height:120px;background:#f0f2f6;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:48px;margin:4px 0 8px 0;">{placeholder_emoji}</div>', unsafe_allow_html=True)
 
     completed = sum(1 for _, done in responses.values() if done)
     total = len(responses)
